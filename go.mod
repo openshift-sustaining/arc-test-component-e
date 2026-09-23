@@ -1,7 +1,5 @@
 module github.com/openshift-sustaining/arc-test-component-e
 
-go 1.20
+go 1.26.0
 
-require golang.org/x/net v0.24.0
-
-require golang.org/x/text v0.14.0 // indirect
+require golang.org/x/net v0.55.0
