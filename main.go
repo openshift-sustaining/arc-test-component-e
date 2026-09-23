@@ -14,10 +14,14 @@ import (
 // This branch reaches both halves: http.Get is an affected net/http symbol, and
 // http2.Transport.NewClientConn is an affected golang.org/x/net/http2 symbol.
 //
-// Expected: arc:positive + arc:positive:stdlib + arc:positive:non-stdlib, and a
-// bump PR covering golang.org/x/net only. The stdlib half must not suppress
-// remediation of the non-stdlib half -- that regression is the point of this
-// branch.
+// The code here is identical to release-4.14 on purpose: 5.1 is listed in the
+// OCPBUGS project's dev_versions, so the only thing that should differ is what
+// ARC does about it.
+//
+// Expected: arc:positive + arc:positive:stdlib + arc:positive:non-stdlib -- the
+// labels describe the scan finding and are unaffected by the branch -- but *no*
+// bump PR. ARC should comment with manual-bump instructions instead, because
+// Sustaining Engineering does not own dev branches.
 func main() {
 	resp, err := http.Get("https://example.com")
 	if err != nil {
