@@ -3,16 +3,15 @@ package main
 import (
 	"fmt"
 	"net"
-	"net/http"
 
-	"golang.org/x/net/http2"
+	"golang.org/x/net/dns/dnsmessage"
 )
 
-// CVE-2026-33814 affects two packages: net/http in the Go standard library, and
-// golang.org/x/net/http2.
+// CVE-2026-46600 affects two packages: net in the Go standard library, and
+// golang.org/x/net/dns/dnsmessage.
 //
-// This branch reaches both halves: http.Get is an affected net/http symbol, and
-// http2.Transport.NewClientConn is an affected golang.org/x/net/http2 symbol.
+// This branch reaches both halves: net.LookupCNAME is an affected net symbol,
+// and Message.Unpack / Parser.Answer are affected dnsmessage symbols.
 //
 // The code here is identical to release-4.14 on purpose: 5.1 is listed in the
 // OCPBUGS project's dev_versions, so the only thing that should differ is what
@@ -23,28 +22,69 @@ import (
 // bump PR. ARC should comment with manual-bump instructions instead, because
 // Sustaining Engineering does not own dev branches.
 func main() {
-	resp, err := http.Get("https://example.com")
+	cname, err := net.LookupCNAME("www.example.com")
 	if err != nil {
-		fmt.Println("request failed:", err)
-		return
+		fmt.Println("lookup failed:", err)
+	} else {
+		fmt.Println("cname:", cname)
 	}
-	resp.Body.Close()
 
-	fmt.Println("status:", resp.Status)
-
-	conn, err := net.Dial("tcp", "example.com:443")
+	wire, err := buildResponse()
 	if err != nil {
-		fmt.Println("dial failed:", err)
-		return
-	}
-	defer conn.Close()
-
-	tr := &http2.Transport{}
-
-	if _, err := tr.NewClientConn(conn); err != nil {
-		fmt.Println("http2 handshake failed:", err)
+		fmt.Println("build failed:", err)
 		return
 	}
 
-	fmt.Println("http2 client connection established")
+	var msg dnsmessage.Message
+	if err := msg.Unpack(wire); err != nil {
+		fmt.Println("unpack failed:", err)
+		return
+	}
+	fmt.Println("unpacked answers:", len(msg.Answers))
+
+	var parser dnsmessage.Parser
+	if _, err := parser.Start(wire); err != nil {
+		fmt.Println("parser start failed:", err)
+		return
+	}
+	if err := parser.SkipAllQuestions(); err != nil {
+		fmt.Println("skip questions failed:", err)
+		return
+	}
+
+	for {
+		answer, err := parser.Answer()
+		if err == dnsmessage.ErrSectionDone {
+			break
+		}
+		if err != nil {
+			fmt.Println("parse answer failed:", err)
+			return
+		}
+		fmt.Println("answer:", answer.Header.Name.String())
+	}
+}
+
+// buildResponse packs a minimal DNS response so that main has something valid to
+// feed back through the affected parsing symbols.
+func buildResponse() ([]byte, error) {
+	name := dnsmessage.MustNewName("www.example.com.")
+
+	builder := dnsmessage.NewBuilder(nil, dnsmessage.Header{Response: true})
+	if err := builder.StartQuestions(); err != nil {
+		return nil, err
+	}
+	question := dnsmessage.Question{Name: name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET}
+	if err := builder.Question(question); err != nil {
+		return nil, err
+	}
+	if err := builder.StartAnswers(); err != nil {
+		return nil, err
+	}
+	header := dnsmessage.ResourceHeader{Name: name, Type: dnsmessage.TypeA, Class: dnsmessage.ClassINET, TTL: 300}
+	if err := builder.AResource(header, dnsmessage.AResource{A: [4]byte{93, 184, 216, 34}}); err != nil {
+		return nil, err
+	}
+
+	return builder.Finish()
 }
