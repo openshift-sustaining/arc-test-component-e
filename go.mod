@@ -1,3 +1,3 @@
 module github.com/openshift-sustaining/arc-test-component-e
 
-go 1.20
+go 1.26.0
